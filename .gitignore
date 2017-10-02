@@ -32,3 +32,4 @@ sysinfo.txt
 *.unitypackage
 
 .DS_Store
+.vscode/settings.json
