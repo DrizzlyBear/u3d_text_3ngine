@@ -45,11 +45,6 @@ public class u3d_text_3ngine : MonoBehaviour
     private const int maxCpuTimePercent = 10;
 
     /// <summary>
-    /// The color to use as default for uncolored text
-    /// </summary>
-    private const char defaultColor = 'S';
-
-    /// <summary>
     /// Color lookup used for standard hackmud color letters
     /// </summary>
     public static readonly Dictionary<char, Color32> HackmudColors = new Dictionary<char, Color32>() {
@@ -75,6 +70,12 @@ public class u3d_text_3ngine : MonoBehaviour
         { '5', HexToColor("FF8000") }, { '6', HexToColor("FF8000") }, { '7', HexToColor("FF8000") },
         { '8', HexToColor("FF8000") }, { '9', HexToColor("FF8000") },
     };
+
+    /// <summary>
+    /// The color to use as default for uncolored text
+    /// </summary>
+    public static readonly Color32 defaultForegroundColor = HackmudColors['S'];
+    public static readonly Color32 defaultBackgroundColor = HexToColor("121015");
 
     /// <summary>
     /// Hackmud corruption characters
@@ -436,7 +437,8 @@ public class u3d_text_3ngine : MonoBehaviour
             // Generate corruption text and create the mesh and vertex colors for it.
             string corrText = string.Join("", Enumerable.Range(0, WidthChars)
                 .Select(curCharNum => r.NextDouble() > 0.4 ?
-                        string.Format("`{0}{1}`", HackmudColors.ElementAt(r.Next(HackmudColors.Count)).Key,
+                        string.Format("<c{0}{1}{2}>", HackmudColors.ElementAt(r.Next(HackmudColors.Count)).Key,
+                                      HackmudColors.ElementAt(r.Next(HackmudColors.Count)).Key,
                                       corruption_chars[r.Next(corruption_chars.Length)]) :
                         " ").ToArray());
 
@@ -633,44 +635,139 @@ public class u3d_text_3ngine : MonoBehaviour
 
         // Used to store the display characters and display colors per character
         StringBuilder sb = new StringBuilder();
-        Color32[] colors = new Color32[maxWidth];
+        Color32[] fgColors = new Color32[maxWidth];
+        Color32[] bgColors = new Color32[maxWidth];
 
-        // Match the input string to the color regex
-        Regex colorRegex = new Regex("`([0-9A-Za-z])(?!(:.?|.?:)`)([^`\n]+)`");
-        MatchCollection matches = colorRegex.Matches(curText);
+        // Used to track the current color for both background and foreground colors
+        Stack<Color32> bgColorStack = new Stack<Color32>();
+        Stack<Color32> fgColorStack = new Stack<Color32>();
+        fgColorStack.Push(defaultForegroundColor);
+        bgColorStack.Push(defaultBackgroundColor);
 
-        // Tracks the input index and output index
-        int curCharSource = 0;
-        int curCharDest = 0;
-
-        foreach (Match curMatch in matches)
+        int tagOpens = 0;
+        int tagCloses = 0;
+        for (int pass = 0; pass < 2; pass++)
         {
-            // Copy all characters between the last match and the current match to the output with default colors
-            if (curMatch.Index != curCharSource)
+            // Used to track escaped characters in the input string
+            bool escaped = false;
+            int depth = 0;
+            int mismatch = tagOpens - tagCloses;
+            for (int x = 0; x < curText.Length; x++)
             {
-                sb.Append(curText.Substring(curCharSource, curMatch.Index - curCharSource));
-                SetColors(colors, defaultColor, curCharDest, curMatch.Index - curCharSource);
+                bool processChar = false;
 
-                // Track where we are in the output
-                curCharDest += curMatch.Index - curCharSource;
+                char c = curText[x];
+                switch (c)
+                {
+                    case '<':
+                        // If escaped or too close to end of string to form a proper color code, just write it out
+                        if (escaped || ((x + 3) >= curText.Length))
+                        {
+                            processChar = true;
+                            break;
+                        }
+
+                        char next = curText[x + 1];
+                        // If this isn't the open color char code, treat as plain text
+                        if (next != 'c')
+                        {
+                            processChar = true;
+                            break;
+                        }
+                        char fgChar = curText[x + 2];
+                        char bgChar = curText[x + 3];
+
+                        // If the color code specified isn't valid, just treat this as plain text
+                        if (fgChar != '*' && HackmudColors.ContainsKey(fgChar) == false)
+                        {
+                            processChar = true;
+                            break;
+                        }
+                        if (bgChar != '*' && HackmudColors.ContainsKey(bgChar) == false)
+                        {
+                            processChar = true;
+                            break;
+                        }
+
+                        if (pass > 0 && mismatch > 0)
+                        {
+                            mismatch--;
+                            processChar = true;
+                            break;
+                        }
+
+                        // We have a valid color code and we parsed it, so jump forward to the next non-consumed character
+                        x += 3;
+
+                        depth++;
+                        tagOpens++;
+
+                        // If we're doing first pass, don't modify stacks
+                        if (pass == 0)
+                        {
+                            break;
+                        }
+
+                        // A wildcard '*' char does not overwrite the last color code, so defer to current coloring on the stack
+                        Color32 fgColor = fgChar == '*' ? fgColorStack.Peek() : HackmudColors[fgChar];
+                        Color32 bgColor = bgChar == '*' ? bgColorStack.Peek() : HackmudColors[bgChar];
+
+                        fgColorStack.Push(fgColor);
+                        bgColorStack.Push(bgColor);
+
+                        break;
+                    case '>':
+                        // If this is escaped or if we don't have any active tags, treat as plain text
+                        if (escaped || depth == 0)
+                        {
+                            processChar = true;
+                            break;
+                        }
+
+                        // Color tag ended, decrement depth, increment tagCloses, and pop the most recent bg/fg colors
+                        depth--;
+                        tagCloses++;
+
+                        // If we're doing first pass, don't modify stacks
+                        if (pass == 0)
+                        {
+                            break;
+                        }
+
+                        fgColorStack.Pop();
+                        bgColorStack.Pop();
+                        break;
+                    case '\\':
+                        if (escaped == false)
+                        {
+                            escaped = true;
+                            break;
+                        }
+                        else
+                        {
+                            processChar = true;
+                            break;
+                        }
+                    default:
+                        processChar = true;
+                        break;
+                }
+
+                // First pass needs to skip the write logic
+                if (processChar && pass > 0)
+                {
+                    // If processChar is true, we are no longer escaped, so just set to false every time
+                    escaped = false;
+                    sb.Append(c);
+                    if (sb.Length < maxWidth)
+                    {
+                        // Because some characters don't get displayed,
+                        // make sure we associate the color arrays with the actual string length
+                        fgColors[sb.Length - 1] = fgColorStack.Peek();
+                        bgColors[sb.Length - 1] = bgColorStack.Peek();
+                    }
+                }
             }
-
-            // Copy all chars in the current match to the output with the specified color
-            string deColVal = curMatch.Groups[3].Captures[0].Value;
-
-            sb.Append(deColVal);
-            SetColors(colors, curMatch.Groups[1].Captures[0].Value[0], curCharDest, deColVal.Length);
-
-            // Track where we are in the input and output
-            curCharSource = curMatch.Index + curMatch.Length;
-            curCharDest += deColVal.Length;
-        }
-
-        // Copy all characters between the last match and the end of the input to the output with default colors
-        if (curCharSource != (curText.Length))
-        {
-            sb.Append(curText.Substring(curCharSource, curText.Length - curCharSource));
-            SetColors(colors, defaultColor, curCharDest, curText.Length - curCharSource);
         }
 
         string newVal = sb.ToString();
@@ -699,7 +796,7 @@ public class u3d_text_3ngine : MonoBehaviour
         foreach (TMP_CharacterInfo curCharInfo in lineGui.textInfo.characterInfo.Where(cur => cur.isVisible))
         {
             // Get the color and the start vertex
-            Color32 charMeshColor = colors[curCharInfo.index];
+            Color32 charMeshColor = fgColors[curCharInfo.index];
             int startIndex = curCharInfo.vertexIndex;
 
             // Update the vertex colors

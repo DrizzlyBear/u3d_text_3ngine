@@ -130,12 +130,49 @@ public class scroll_test : MonoBehaviour
 
         while (accumulator > msPerLine)
         {
-            string newLine = string.Join("", Enumerable.Range(0, engine.WidthChars)
-                .Select(cur => r.NextDouble() <= percentFull ?
-                        string.Format("`{0}{1}`", 
-                                      u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key,
-                                      (char)(r.Next(26) + 'a')) :
-                        " ").ToArray());
+            char fgColor = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+            char bgColor = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+
+            double rand = r.NextDouble();
+            string newLine = "";
+            if(rand < 0.65)
+            {
+                newLine = string.Join("", Enumerable.Range(0, engine.WidthChars)
+                    .Select(cur => r.NextDouble() <= percentFull ? string.Format("<c{0}{1}{2}>", 
+                    u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key, 
+                    u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key, 
+                    (char)(r.Next(26) + 'a')) : " ")
+                    .ToArray());
+            }
+            else if (rand < 0.75)
+            {
+                newLine = string.Format("<c{0}{1}this is a colored string>", fgColor, bgColor);
+            }
+            else if (rand < 0.85)
+            {
+                char fgColor2 = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+                char bgColor2 = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+
+                newLine = string.Format("<c{0}{1}this is a <c{2}{3}broken nested color string>", fgColor, bgColor,
+                                                                                                 fgColor2, bgColor2);
+            }
+            else if (rand < 0.95)
+            {
+                char fgColor2 = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+                char bgColor2 = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+
+                newLine = string.Format("<c{0}{1}this is a <c{2}{3}doubly <c{4}{5}broken nested color string>",
+                                        fgColor, bgColor, fgColor2, bgColor2, fgColor, fgColor2);
+            }
+            else
+            {
+                char fgColor2 = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+                char bgColor2 = u3d_text_3ngine.HackmudColors.ElementAt(r.Next(u3d_text_3ngine.HackmudColors.Count)).Key;
+
+                newLine = string.Format("<c{0}{1}this is a <c{2}{3}nested> colored string>", fgColor, bgColor,
+                                                                                             fgColor2, bgColor2);
+            }
+            
 
             engine.DisplayText = engine.DisplayText.Skip(1).Concat(new string[] { newLine }).ToArray();
 
